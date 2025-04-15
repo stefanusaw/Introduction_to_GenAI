@@ -1,69 +1,50 @@
-# import os
-
-# file_path = "/Users/albertwelong/Github_Site/Cognizant/GenAI/Capstone/updated//full_pipeline.pkl"
-
-# if not os.path.exists(file_path):
-#     print("File not found!")
-# else:
-#     print("File exists!")
-
-
-import streamlit as st
+import requests
 import joblib
+import base64
+import os
+import streamlit as st
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import seaborn as sns
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import requests
-import base64
 from io import BytesIO
 from PIL import Image
 
+# Define a utility function to fetch and save models
+def fetch_model(api_url, local_path):
+    if not os.path.exists(local_path):
+        response = requests.post(api_url)
+        if response.status_code == 200:
+            model_data = base64.b64decode(response.json()["model"])
+            with open(local_path, "wb") as f:
+                f.write(model_data)
+        else:
+            raise Exception(f"Failed to fetch model from {api_url}")
 
-# Load the models and preprocessor
-# full_pipeline = joblib.load('/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/full_pipeline.pkl')
-# best_model = joblib.load('/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/best_model.pkl') 
-# kmeans_model = joblib.load('/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/kmeans_model.pkl') 
-# preprocessor = joblib.load('/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/preprocessor.pkl') 
-# scaler = joblib.load('/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/scaler.pkl') 
+# API URLs for the models
+base_url = "https://introduction-to-genai-captsone.onrender.com"
+best_model_url = f"{base_url}/best_model"
+kmeans_model_url = f"{base_url}/kmeans_model"
+preprocessor_url = f"{base_url}/preprocessor"
+scaler_url = f"{base_url}/scaler"
 
-full_pipeline = joblib.load('full_pipeline.pkl')
-best_model = joblib.load('best_model.pkl') 
-kmeans_model = joblib.load('kmeans_model.pkl') 
-preprocessor = joblib.load('preprocessor.pkl') 
-scaler = joblib.load('scaler.pkl') 
+# Local paths for the models
+best_model_path = "best_model.pkl"
+kmeans_model_path = "kmeans_model.pkl"
+preprocessor_path = "preprocessor.pkl"
+scaler_path = "scaler.pkl"
 
-# Define Generator Model
-class Generator(nn.Module):
-    def __init__(self, z_dim):
-        super(Generator, self).__init__()
-        self.fc1 = nn.Linear(z_dim, 256)
-        self.fc2 = nn.Linear(256, 512)
-        self.fc3 = nn.Linear(512, 1024)
-        self.fc4 = nn.Linear(1024, 3 * 64 * 64)  # Output: 64x64x3
-        self.relu = nn.ReLU(True)
-        self.tanh = nn.Tanh()
+# Fetch and save the models
+fetch_model(best_model_url, best_model_path)
+fetch_model(kmeans_model_url, kmeans_model_path)
+fetch_model(preprocessor_url, preprocessor_path)
+fetch_model(scaler_url, scaler_path)
 
-    def forward(self, z):
-        x = self.relu(self.fc1(z))
-        x = self.relu(self.fc2(x))
-        x = self.relu(self.fc3(x))
-        x = self.fc4(x)
-        x = x.view(-1, 3, 64, 64)  # Reshape to 64x64 image with 3 channels
-        return self.tanh(x)
-
-# Parameters
-z_dim = 100
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Load trained Generator model
-# generator = Generator(z_dim).to(device)
-# generator.load_state_dict(torch.load("generator_epoch_100.pth", map_location=device))
-# generator.eval()
-
+# Load the models
+best_model = joblib.load(best_model_path)
+kmeans_model = joblib.load(kmeans_model_path)
+preprocessor = joblib.load(preprocessor_path)
+scaler = joblib.load(scaler_path)
 
 # Streamlit App layout
 st.title("Student Data Prediction and Clustering, and Image Generator")
@@ -71,57 +52,37 @@ st.title("Student Data Prediction and Clustering, and Image Generator")
 # Create tabs for tasks
 task = st.radio("Select Task", ["Clustering", "Prediction", "Generate"])
 
-
 if task == "Clustering":
-    # Clustering specific input (only studytime and combined grade matter)
     st.subheader("Clustering Task")
-    
     studytime = st.number_input("Study Time", min_value=1, max_value=4, value=1)
     G1 = st.number_input("Grade G1", min_value=0, max_value=20, value=10)
     G2 = st.number_input("Grade G2", min_value=0, max_value=20, value=10)
 
-    # Prepare the input for clustering task (studytime and combined G1/G2)
     input_data_cluster = pd.DataFrame({
         'studytime': [studytime],
         'G1': [G1],
         'G2': [G2]
     })
-    input_data_cluster['G_combined'] = (input_data_cluster['G1'] + input_data_cluster['G2']) / 2  # Add G_combined feature
+    input_data_cluster['G_combined'] = (input_data_cluster['G1'] + input_data_cluster['G2']) / 2
 
-    # Apply scaling to the clustering data
     scaled_cluster_data = scaler.transform(input_data_cluster[['studytime', 'G_combined']])
 
-    # Button to trigger clustering
     if st.button('Run Clustering'):
-        # Check scaled data
-        st.write("Scaled Data:", scaled_cluster_data)
-        
-        # For clustering task (kmeans)
         prediction = kmeans_model.predict(scaled_cluster_data)
         cluster_mapping = {0: "Beginner", 1: "Advanced", 2: "Intermediate"}
         cluster_label = cluster_mapping.get(prediction[0], "Unknown")
         st.write(f"Assigned to {cluster_label} Class")
 
-        # Visualize the clusters
-        st.subheader("Cluster Visualization")
-
-        # Create a matplotlib figure
         fig, ax = plt.subplots()
         sns.scatterplot(x=input_data_cluster['studytime'], y=input_data_cluster['G_combined'], hue=[cluster_label], palette='viridis', ax=ax)
         ax.set_title("Cluster Distribution (studytime vs G_combined)")
-
-        # Pass the figure to st.pyplot
         st.pyplot(fig)
 
 elif task == "Prediction":
-    # Prediction specific input (all 11 columns are needed for prediction)
     st.subheader("Prediction Task")
-    
     studytime = st.number_input("Study Time", min_value=1, max_value=4, value=1)
     G1 = st.number_input("Grade G1", min_value=0, max_value=20, value=10)
     G2 = st.number_input("Grade G2", min_value=0, max_value=20, value=10)
-
-    # Input fields specific to prediction task
     freetime = st.number_input("Free Time", min_value=0, max_value=20, value=10)
     sex = st.selectbox("Sex", ["M", "F"])
     absences = st.number_input("Absences", min_value=0, max_value=100, value=0)
@@ -129,7 +90,6 @@ elif task == "Prediction":
     goout = st.number_input("Go Out", min_value=0, max_value=20, value=10)
     address = st.selectbox("Address", ["U", "R"])
 
-    # Prepare the input for prediction task (all 11 columns)
     input_data_full = pd.DataFrame({
         'studytime': [studytime],
         'G1': [G1],
@@ -142,12 +102,9 @@ elif task == "Prediction":
         'address': [address]
     })
 
-    # Apply preprocessing to the input data for prediction (includes all features)
     transformed_data_full = preprocessor.transform(input_data_full)
 
-    # Button to trigger prediction
     if st.button('Run Prediction'):
-        # For prediction task (e.g., regression or classification)
         prediction = best_model.predict(transformed_data_full)
         if prediction[0] == 0:
             st.write("Prediction: Fail")
@@ -160,7 +117,7 @@ elif task == "Generate":
 
     if st.button("Generate Image"):
         with st.spinner("Generating image... Please wait."):
-            response = requests.post("https://introduction-to-genai-captsone.onrender.com/generate", json={"seed": seed_value})
+            response = requests.post(f"{base_url}/generate", json={"seed": seed_value})
             if response.status_code == 200:
                 img_data = base64.b64decode(response.json()["image"])
                 image = Image.open(BytesIO(img_data))

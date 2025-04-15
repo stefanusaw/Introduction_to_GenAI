@@ -1,16 +1,58 @@
 from fastapi import FastAPI
+import joblib
+import os
+import base64
+from pydantic import BaseModel
 import torch
 import torch.nn.functional as F
 import numpy as np
-from pydantic import BaseModel
 from io import BytesIO
 from PIL import Image
-import base64
 
 # FastAPI app
 app = FastAPI()
 
-# Load the model
+# Define a utility function to encode files as Base64
+def encode_file_as_base64(file_path):
+    with open(file_path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+# Paths to the .pkl files
+"""
+best_model_path = "/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/best_model.pkl"
+kmeans_model_path = "/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/kmeans_model.pkl"
+preprocessor_path = "/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/preprocessor.pkl"
+scaler_path = "/Users/albertwelong/cognizant_genai/.venv/capstone_project/updated/scaler.pkl"
+"""
+
+best_model_path = "best_model.pkl"
+kmeans_model_path = "kmeans_model.pkl"
+preprocessor_path = "preprocessor.pkl"
+scaler_path = "scaler.pkl"
+
+# Ensure the files exist
+for file_path in [best_model_path, kmeans_model_path, preprocessor_path, scaler_path]:
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"{file_path} not found!")
+
+# Serve the models as Base64-encoded files
+@app.post("/best_model")
+def get_best_model():
+    return {"model": encode_file_as_base64(best_model_path)}
+
+@app.post("/kmeans_model")
+def get_kmeans_model():
+    return {"model": encode_file_as_base64(kmeans_model_path)}
+
+@app.post("/preprocessor")
+def get_preprocessor():
+    return {"model": encode_file_as_base64(preprocessor_path)}
+
+@app.post("/scaler")
+def get_scaler():
+    return {"model": encode_file_as_base64(scaler_path)}
+
+# Generator model and /generate endpoint
 class Generator(torch.nn.Module):
     def __init__(self, z_dim):
         super(Generator, self).__init__()
@@ -29,14 +71,12 @@ class Generator(torch.nn.Module):
         x = x.view(-1, 3, 64, 64)
         return self.tanh(x)
 
-# Set up model
 z_dim = 100
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 generator = Generator(z_dim).to(device)
 generator.load_state_dict(torch.load("generator_epoch_100.pth", map_location=device))
 generator.eval()
 
-# Define input schema
 class GenerateInput(BaseModel):
     seed: int
 
@@ -52,7 +92,6 @@ def generate_image(data: GenerateInput):
     generated_image = (generated_image + 1) / 2  # Normalize to [0,1]
     generated_image = generated_image.permute(1, 2, 0).cpu().numpy()
 
-    # Convert to PIL image
     img = Image.fromarray((generated_image * 255).astype(np.uint8))
     buffered = BytesIO()
     img.save(buffered, format="PNG")
