@@ -60,25 +60,25 @@ z_dim = 100
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load trained Generator model
-generator = Generator(z_dim).to(device)
-generator.load_state_dict(torch.load("generator_epoch_100.pth", map_location=device))
-generator.eval()
+# generator = Generator(z_dim).to(device)
+# generator.load_state_dict(torch.load("generator_epoch_100.pth", map_location=device))
+# generator.eval()
 
 
 # Streamlit App layout
-st.title("Student Data Prediction and Clustering")
+st.title("Student Data Prediction and Clustering, and Image Generator")
 
 # Create tabs for tasks
-task = st.radio("Select Task", ["Clustering", "Prediction", "Generator"])
+task = st.radio("Select Task", ["Clustering", "Prediction", "Generate"])
 
-# Shared input fields
-studytime = st.number_input("Study Time", min_value=1, max_value=4, value=1)
-G1 = st.number_input("Grade G1", min_value=0, max_value=20, value=10)
-G2 = st.number_input("Grade G2", min_value=0, max_value=20, value=10)
 
 if task == "Clustering":
     # Clustering specific input (only studytime and combined grade matter)
     st.subheader("Clustering Task")
+    
+    studytime = st.number_input("Study Time", min_value=1, max_value=4, value=1)
+    G1 = st.number_input("Grade G1", min_value=0, max_value=20, value=10)
+    G2 = st.number_input("Grade G2", min_value=0, max_value=20, value=10)
 
     # Prepare the input for clustering task (studytime and combined G1/G2)
     input_data_cluster = pd.DataFrame({
@@ -104,13 +104,22 @@ if task == "Clustering":
 
         # Visualize the clusters
         st.subheader("Cluster Visualization")
-        sns.scatterplot(x=input_data_cluster['studytime'], y=input_data_cluster['G_combined'], hue=[cluster_label], palette='viridis')
-        plt.title("Cluster Distribution (studytime vs G_combined)")
-        st.pyplot()
+
+        # Create a matplotlib figure
+        fig, ax = plt.subplots()
+        sns.scatterplot(x=input_data_cluster['studytime'], y=input_data_cluster['G_combined'], hue=[cluster_label], palette='viridis', ax=ax)
+        ax.set_title("Cluster Distribution (studytime vs G_combined)")
+
+        # Pass the figure to st.pyplot
+        st.pyplot(fig)
 
 elif task == "Prediction":
     # Prediction specific input (all 11 columns are needed for prediction)
     st.subheader("Prediction Task")
+    
+    studytime = st.number_input("Study Time", min_value=1, max_value=4, value=1)
+    G1 = st.number_input("Grade G1", min_value=0, max_value=20, value=10)
+    G2 = st.number_input("Grade G2", min_value=0, max_value=20, value=10)
 
     # Input fields specific to prediction task
     freetime = st.number_input("Free Time", min_value=0, max_value=20, value=10)
@@ -150,10 +159,11 @@ elif task == "Generate":
     seed_value = st.slider("Seed for Latent Vector", 0, 100, 42)
 
     if st.button("Generate Image"):
-        response = requests.post("https://introduction-to-genai-captsone.onrender.com/generate", json={"seed": seed_value})
-        if response.status_code == 200:
-            img_data = base64.b64decode(response.json()["image"])
-            image = Image.open(BytesIO(img_data))
-            st.image(image, caption="Generated Image", use_container_width=True)
-        else:
-            st.error("Error generating image!")
+        with st.spinner("Generating image... Please wait."):
+            response = requests.post("https://introduction-to-genai-captsone.onrender.com/generate", json={"seed": seed_value})
+            if response.status_code == 200:
+                img_data = base64.b64decode(response.json()["image"])
+                image = Image.open(BytesIO(img_data))
+                st.image(image, caption="Generated Image", use_container_width=True)
+            else:
+                st.error("Error generating image!")
